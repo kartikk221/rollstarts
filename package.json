@@ -1,0 +1,31 @@
+{
+    "name": "rollstarts",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "A simple Node.js package to implement zero-downtime rolling restarts within your application.",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kartikk221/rollstarts.git"
+    },
+    "keywords": [
+        "zero",
+        "downtime",
+        "rolling",
+        "restarts",
+        "node",
+        "npm",
+        "fast",
+        "simple",
+        "easy"
+    ],
+    "author": "kartikk221",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/kartikk221/rollstarts/issues"
+    },
+    "homepage": "https://github.com/kartikk221/rollstarts#readme"
+}
