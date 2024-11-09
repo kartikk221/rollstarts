@@ -1,25 +1,26 @@
 import EventEmitter from 'events';
 import child_process from 'child_process';
-import { RS_CONSTANTS } from './constants';
+import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants';
+
+/**
+ * @typedef {Object} RollStartsOptions
+ * @property {string} path The path to the root Javascript file for your application.
+ * @property {boolean} [watch=true] Whether or not to watch the root Javascript file for changes to automatically restart the application.
+ * @property {boolean} [recover=true] Whether to automatically recover from a crash within the root Javascript file application.
+ * @property {number} [recover_attempts=100] The number of times to attempt recovery from a crashes. Note! This count only applies to a crash loop and will reset if the application remains started for a period of time.
+ * @property {number} [recover_ttl_ms=1000] The interval in milliseconds before the recovery attempts count resets.
+ * @property {number} [ipc_timeout_ms=5000] The timeout in milliseconds for IPC messages. This is required to prevent hanging processes.
+ * @property {string} [command="node"] The command used to start the application.
+ * @property {string[]} [args=[string]] The arguments passed to the command.
+ * @property {child_process.SpawnOptions} [options] The options passed when constructing the child process.
+ */
 
 // Manages an active rollstarts process
 export class RollStartsManager extends EventEmitter {
     #options; // The options passed to the constructor
-    #active_process; // The child process that is currently running (if any)
-    #temporary_process; // The recurring child process (if any)
-    #recover_attempts = 0; // The number of recoveries reamining
-
-    /**
-     * @typedef {Object} RollStartsOptions
-     * @property {string} path The path to the root Javascript file for your application.
-     * @property {boolean} [watch=true] Whether or not to watch the root Javascript file for changes to automatically restart the application.
-     * @property {boolean} [recover=true] Whether to automatically recover from a crash within the root Javascript file application.
-     * @property {number} [recover_attempts=100] The number of times to attempt recovery from a crashes. Note! This count only applies to a crash loop and will reset if the application remains started for a period of time.
-     * @property {number} [recover_ttl_ms=1000] The interval in milliseconds before the recovery attempts count resets.
-     * @property {string} [command="node"] The command used to start the application.
-     * @property {string[]} [args=[string]] The arguments passed to the command.
-     * @property {child_process.SpawnOptions} [options] The options passed when constructing the child process.
-     */
+    #active_process = null; // The active process (if any)
+    #temporary_process = null; // The temporary process which will replace the active process (if any)
+    #recover_attempts = 0; // The number of recurring recoveries remaining
 
     /**
      * @param {RollStartsOptions} options
@@ -48,13 +49,21 @@ export class RollStartsManager extends EventEmitter {
         // Create a promise to resolve when the restart is complete
         this.#restart_promise = new Promise((resolve, reject) => {
             // Destructure the options
-            const { command = 'node', args = [this.#options.path], options = {} } = this.#options;
+            const {
+                command = 'node',
+                args = [this.#options.path],
+                options = {},
+                ipc_timeout_ms = IPC_DEFAULT_TIMEOUT_MS,
+            } = this.#options;
 
             // Generate the environment variables for the child process
             const environment = {
                 ...process.env, // Pass through current environment variables
                 ...options.env, // Pass through any environment variables specified in the options
             };
+
+            // Include the IPC timeout environment variable
+            environment[RS_CONSTANTS.IPC_TIMEOUT_MS] = ipc_timeout_ms.toString();
 
             // Store an environment variable to indicate the type of rollstarts child process
             if (this.#active_process) {
@@ -66,18 +75,21 @@ export class RollStartsManager extends EventEmitter {
                 environment[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS] = 'true';
             }
 
-            // We always want ipc to be the stdio stream
-            const stdio = ['ipc'];
-            if (options.stdio) {
-                // Push the user's stdio streams onto the default stdio streams
-                stdio.push(...options.stdio);
-            } else {
-                // By default, we will inherit all the stdio streams
-                stdio.push('inherit');
-            }
+            // Determine the stdio streams
+            // By default, we will inherit all stdio streams
+            const stdio = options.stdio || ['inherit', 'inherit', 'inherit', 'ipc'];
+
+            // Warn the user if the ipc stdio stream is not being declared
+            if (!stdio.includes('ipc'))
+                console.warn(
+                    'RollStarts: The ipc stdio stream is not being declared within stdio argument. This may prevent IPC which is required for RollStarts to work properly.'
+                );
 
             // Create a new recurring process
             const new_process = child_process.spawn(command, args, {
+                // By default, hide the sub process windows on Windows
+                windowsHide: true,
+
                 // Include the user's options to override the defaults
                 ...options,
 
@@ -152,8 +164,8 @@ export class RollStartsManager extends EventEmitter {
                         this.restart();
                     }
 
-                    // Emit 'recovers' event with the number of remaining attempts
-                    this.emit('recovers', this.#recover_attempts);
+                    // Emit 'recover' event with the number of remaining attempts
+                    this.emit('recover', this.#recover_attempts);
                 }
             });
 
@@ -163,5 +175,20 @@ export class RollStartsManager extends EventEmitter {
 
         // Return the promise
         return this.#restart_promise;
+    }
+
+    /**
+     * Returns `true` if there is currently a rolling restart in flight.
+     */
+    get in_flight() {
+        return this.#temporary_process !== null;
+    }
+
+    /**
+     * Returns the active child process which is running the root Javascript file or null if there is no active process at the moment.
+     * @returns {import('child_process').ChildProcess|null}
+     */
+    get active() {
+        return this.#active_process;
     }
 }
