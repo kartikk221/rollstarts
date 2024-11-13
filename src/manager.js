@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 import child_process from 'child_process';
-import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants';
+import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants.js';
 
 /**
  * @typedef {Object} RollStartsOptions
@@ -95,26 +95,24 @@ export class RollStartsManager extends EventEmitter {
 
                 // By default, we will inherit all the stdio streams
                 // The user can override this by passing in their own options
-                stdio: Array.from(new Set(stdio)),
+                stdio,
 
                 // Include the environment variables
                 env: environment,
             });
 
+            // Pipe all errors from the recurring process to the master process
+            new_process.on('error', (error) => this.emit('error', error));
+
             // Listen for 'message' events from the recurring process
-            new_process.once('message', async (raw) => {
+            new_process.on('message', async (raw) => {
                 // Handle incoming messages from the recurring process
                 const message = raw.toString();
                 switch (message) {
+                    // Handle the should begin to serve message to initialize the new process
                     case RS_CONSTANTS.IS_READY_TO_SERVE:
                         // Kill the active process (if it exists)
-                        if (this.#active_process) {
-                            // Kill the active process
-                            this.#active_process.kill();
-
-                            // If the active process has not exited, wait for it to exit
-                            await new Promise((resolve) => this.#active_process.once('exit', resolve));
-                        }
+                        if (this.#active_process) this.#active_process.kill();
 
                         // Store this recurring process as the active process
                         this.#active_process = new_process;
@@ -127,7 +125,9 @@ export class RollStartsManager extends EventEmitter {
                             this.#temporary_process = null;
 
                         // Instruct the active process to begin serving information
-                        new_process.send(RS_CONSTANTS.SHOULD_BEGIN_TO_SERVE);
+                        try {
+                            new_process.send(RS_CONSTANTS.SHOULD_BEGIN_TO_SERVE);
+                        } catch (error) {}
 
                         // Resolve the promise if not already resolved
                         if (this.#restart_promise) {
@@ -135,11 +135,43 @@ export class RollStartsManager extends EventEmitter {
                             resolve();
                         }
                         break;
+
+                    // Handle the request restart message to restart the application
+                    case RS_CONSTANTS.REQUEST_RESTART:
+                        // Trigger a restart
+                        this.restart();
+                        break;
+
+                    // Handle the rest of the messages
+                    default:
+                        // Determine if this is a kill request
+                        if (message.startsWith(RS_CONSTANTS.REQUEST_EXIT)) {
+                            // Parse the kill signal if possible
+                            let stripped = message.replace(RS_CONSTANTS.REQUEST_EXIT, '');
+                            let signal = stripped ? (isNaN(+stripped) ? stripped : +stripped) : undefined; // Use string if not a number otherwise use number
+
+                            // Disable auto recover
+                            this.#options.recover = false;
+
+                            // Kill the process
+                            new_process.kill();
+
+                            // Exit the process
+                            process.exit(signal);
+                        }
+
+                        break;
                 }
             });
 
             // Listen for the 'exit' event from the recurring process
             new_process.once('exit', (code) => {
+                // Remove all message listeners from the recurring process
+                new_process.removeAllListeners('message');
+
+                // Determine the last active PID
+                const last_active_pid = this.#active_process?.pid || this.#temporary_process?.pid;
+
                 // Remove this process as the active process if the PID matches
                 if (this.#active_process && this.#active_process.pid === new_process.pid) this.#active_process = null;
 
@@ -152,12 +184,14 @@ export class RollStartsManager extends EventEmitter {
 
                 // If the restart promise is still pending, then reject it with the exit code
                 if (this.#restart_promise) {
+                    // Clear the restart promise
                     this.#restart_promise = null;
                     reject(new Error(`RollStartsManager: Child Process ${new_process.pid} Exited With Code ${code}`));
                 }
 
                 // If auto recover is enabled, then attempt to restart the application to recover it
-                if (this.#options.recover) {
+                const should_recover = this.#options.recover !== undefined ? this.#options.recover : true;
+                if (should_recover && last_active_pid === new_process.pid) {
                     // Determine if we have more attempts remaining
                     if (this.#recover_attempts > 0) {
                         this.#recover_attempts--;

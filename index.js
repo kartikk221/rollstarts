@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { RollStartsManager } from './src/manager';
-import { IPC_DEFAULT_TIMEOUT_MS, RS_CONSTANTS } from './src/constants';
+import { RollStartsManager } from './src/manager.js';
+import { IPC_DEFAULT_TIMEOUT_MS, RS_CONSTANTS } from './src/constants.js';
 
 /**
  * Returns `true` if the current process is a master process which can start an application and manage sub-processes for zero-downtime rolling restarts.
@@ -11,6 +11,44 @@ export function master() {
     return (
         !process.env[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS] &&
         !process.env[RS_CONSTANTS.IS_ROLLSTARTS_RECURRING_PROCESS]
+    );
+}
+
+/**
+ * Triggers a rolling restart of the application.
+ * Note! This method can ONLY be called from a child process, not the master process.
+ * @returns {boolean}
+ */
+export function restart() {
+    // Ensure this is not a master process
+    if (!master()) {
+        // Send a request to restart the application
+        // We do not have to de-duplicate this request as the master process manager will automaticaly de-duplicate all restart requests
+        return process.send(RS_CONSTANTS.REQUEST_RESTART);
+    }
+
+    // Throw an error if this is not a child process
+    throw new Error(
+        'RollStarts: This process is NOT a child process and cannot be used to request a restart. Please use the `master()` function to determine if this process is a master or child process.'
+    );
+}
+
+/**
+ * Triggers a complete exit of the whole application including the master process.
+ * Note! This method can ONLY be called from a child process, not the master process.
+ * @param {number|string|null|undefined} code The exit code to use. If not provided, then the exit code will be set to 0.
+ */
+export function exit(code) {
+    // Ensure this is not a master process
+    if (!master()) {
+        // Send a request to exit the application
+        // We do not have to de-duplicate this request as the master process manager will automaticaly de-duplicate all exit requests
+        return process.send(`${RS_CONSTANTS.REQUEST_EXIT}${code}`);
+    }
+
+    // Throw an error if this is not a child process
+    throw new Error(
+        'RollStarts: This process is NOT a child process and cannot be used to request an exit. Please use the `master()` function to determine if this process is a master or child process.'
     );
 }
 
@@ -50,10 +88,17 @@ let ready_promise = null;
  * Returns a `Promise` that resolves once a rolling restart is complete.
  * This means that the old process (if any) has exited and this process has fully replaced it.
  * Note! This can be useful to wait before starting a webserver for example in order to prevent port busy / reuse errors.
+ * @returns {Promise<void>}
  */
 export function ready() {
     // If this is an initial process, then immediately resolve
-    if (process.env[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS]) return Promise.resolve();
+    if (process.env[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS]) {
+        // Send a ready to serve message to the master process
+        process.send(RS_CONSTANTS.IS_READY_TO_SERVE);
+
+        // Return a promise to resolve once the process is ready
+        return Promise.resolve();
+    }
 
     // If this is a recurring process, then send a ready to serve message to the master process and wait for a should begin to serve message
     if (process.env[RS_CONSTANTS.IS_ROLLSTARTS_RECURRING_PROCESS]) {
@@ -128,7 +173,7 @@ export function ready() {
     // Reject with a promise to ensure the user does not mis-use this function
     return Promise.reject(
         new Error(
-            'RollStarts: This process is NOT a sub-process and cannot be used to wait for a rolling restart to complete. Please use the `master()` function to determine if this process is a master or sub-process process.'
+            'RollStarts: This process is NOT a child process and cannot be used to wait for a rolling restart to complete. Please use the `master()` function to determine if this process is a master or sub-process process.'
         )
     );
 }
