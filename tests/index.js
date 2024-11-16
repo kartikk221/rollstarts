@@ -1,5 +1,5 @@
-import fs from 'fs';
-import * as RollStarts from '../index.js';
+const fs = require('fs');
+const RollStarts = require('../index.js');
 
 // Load the environment variables from the disk
 const raw_env = fs.readFileSync('./.env', 'utf8').split('\n').filter(Boolean);
@@ -8,11 +8,6 @@ for (const line of raw_env) {
     const [key, value] = line.split('=');
     custom_env[key] = value;
 }
-
-// We will use this to start the current application as a child process
-const __filename = decodeURIComponent(
-    new URL('', import.meta.url).pathname.split('\\').join('/').replace('file:///', '').replace('/', '')
-);
 
 const TESTS_PROCESS_IS_READY = 'RS_TESTS_PROCESS_IS_READY';
 

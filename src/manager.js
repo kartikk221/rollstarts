@@ -1,7 +1,7 @@
-import fs from 'fs';
-import EventEmitter from 'events';
-import child_process from 'child_process';
-import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants.js';
+const fs = require('fs');
+const EventEmitter = require('events');
+const child_process = require('child_process');
+const { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } = require('./constants.js');
 
 /**
  * @typedef {Object} RollStartsOptions
@@ -17,7 +17,7 @@ import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants.js';
  */
 
 // Manages an active rollstarts process
-export class RollStartsManager extends EventEmitter {
+class RollStartsManager extends EventEmitter {
     #watcher; // The watcher instance (if any)
     #options; // The options passed to the constructor
     #active_process = null; // The active process (if any)
@@ -266,3 +266,7 @@ export class RollStartsManager extends EventEmitter {
         return this.#active_process;
     }
 }
+
+module.exports = {
+    RollStartsManager,
+};

@@ -1,12 +1,12 @@
-import fs from 'fs';
-import { RollStartsManager } from './src/manager.js';
-import { IPC_DEFAULT_TIMEOUT_MS, RS_CONSTANTS } from './src/constants.js';
+const fs = require('fs');
+const { RollStartsManager } = require('./src/manager.js');
+const { IPC_DEFAULT_TIMEOUT_MS, RS_CONSTANTS } = require('./src/constants.js');
 
 /**
  * Returns `true` if the current process is a master process which can start an application and manage sub-processes for zero-downtime rolling restarts.
  * Note! The `start()` should only be called from a master process.
  */
-export function master() {
+function master() {
     // Return that this process is neither an initial or recurring process
     return (
         !process.env[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS] &&
@@ -18,7 +18,7 @@ export function master() {
  * Triggers a rolling restart of the application.
  * Note! This method can ONLY be called from a child process, not the master process.
  */
-export function restart() {
+function restart() {
     // Ensure this is not a master process
     if (!master()) {
         // Send a request to restart the application
@@ -37,7 +37,7 @@ export function restart() {
  * Note! This method can ONLY be called from a child process, not the master process.
  * @param {number|string|null|undefined} code The exit code to use. If not provided, then the exit code will be set to 0.
  */
-export function exit(code) {
+function exit(code) {
     // Ensure this is not a master process
     if (!master()) {
         // Send a request to exit the application
@@ -56,7 +56,7 @@ export function exit(code) {
  * @param {import("./src/manager").RollStartsOptions} options
  * @returns {Promise<import("./src/manager").RollStartsManager>}
  */
-export async function start(options = {}) {
+async function start(options = {}) {
     // Ensure that this is a master process
     if (!master())
         throw new Error(
@@ -89,7 +89,7 @@ let ready_promise = null;
  * Note! This can be useful to wait before starting a webserver for example in order to prevent port busy / reuse errors.
  * @returns {Promise<void>}
  */
-export function ready() {
+function ready() {
     // If this is an initial process, then immediately resolve
     if (process.env[RS_CONSTANTS.IS_ROLLSTARTS_INITIAL_PROCESS]) {
         // Send a ready to serve message to the master process
@@ -176,3 +176,11 @@ export function ready() {
         )
     );
 }
+
+module.exports = {
+    master,
+    restart,
+    exit,
+    start,
+    ready,
+};
