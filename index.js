@@ -17,7 +17,6 @@ export function master() {
 /**
  * Triggers a rolling restart of the application.
  * Note! This method can ONLY be called from a child process, not the master process.
- * @returns {boolean}
  */
 export function restart() {
     // Ensure this is not a master process

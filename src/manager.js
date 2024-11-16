@@ -234,6 +234,24 @@ export class RollStartsManager extends EventEmitter {
     }
 
     /**
+     * Destroys the manager and all associated resources including active application processes.
+     */
+    destroy() {
+        // Destroy the watcher if it exists
+        if (this.#watcher) this.#watcher.close();
+
+        // Destroy the active process if it exists
+        if (this.#active_process) this.#active_process.kill();
+
+        // Destroy the temporary process if it exists
+        if (this.#temporary_process) this.#temporary_process.kill();
+
+        // Disable auto recover and watching
+        this.#options.watch = false;
+        this.#options.recover = false;
+    }
+
+    /**
      * Returns `true` if there is currently a rolling restart in flight.
      */
     get in_flight() {
