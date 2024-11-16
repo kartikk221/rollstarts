@@ -1,6 +1,14 @@
 import fs from 'fs';
 import * as RollStarts from '../index.js';
 
+// Load the environment variables from the disk
+const raw_env = fs.readFileSync('./.env', 'utf8').split('\n').filter(Boolean);
+const custom_env = {};
+for (const line of raw_env) {
+    const [key, value] = line.split('=');
+    custom_env[key] = value;
+}
+
 // We will use this to start the current application as a child process
 const __filename = decodeURIComponent(
     new URL('', import.meta.url).pathname.split('\\').join('/').replace('file:///', '').replace('/', '')
@@ -26,6 +34,9 @@ if (RollStarts.master()) {
         exit_errored_1 = true;
     }
     if (!exit_errored_1) throw new Error(`RollStarts.exit() did not throw an error in a master context.`);
+
+    // Set the environment variables so they are propogated to the children
+    for (const key in custom_env) process.env[key] = custom_env[key];
 
     // Enforce that the ready function throws an error in a master context
     RollStarts.ready()
@@ -110,6 +121,13 @@ if (RollStarts.master()) {
     // Enforce that the master context is false in a child process
     if (RollStarts.master()) throw new Error(`RollStarts.master() is true in a child process.`);
 
+    // Assert that the environment variables are propogated to the child process
+    for (const key in custom_env) {
+        if (!process.env[key]) {
+            throw new Error(`The environment variable "${key}" is not propogated to the child process.`);
+        }
+    }
+
     // Define some methods to persist state across multiple restarts
     function get_state() {
         let raw = '';
@@ -147,19 +165,27 @@ if (RollStarts.master()) {
             case 1:
             case 2:
             case 3:
-                // Increment the state to 2
+                // Increment the state
                 set_state(state + 1);
 
                 // Test out a child requested restart
                 RollStarts.restart();
                 break;
             case 4:
-                // Increment the state to 2
+                // Increment the state
+                set_state(state + 1);
+
+                // Rewrite the file contents to trigger a "watcher" restart
+                const content = fs.readFileSync(__filename, 'utf8');
+                fs.writeFileSync(__filename, content);
+                break;
+            case 5:
+                // Increment the state
                 set_state(state + 1);
 
                 // Simulate a child exit to test out the auto recovery system
                 process.exit();
-            case 5:
+            case 6:
                 // Request the master process to exit to properly exit the application
                 RollStarts.exit();
                 break;

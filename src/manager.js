@@ -1,3 +1,4 @@
+import fs from 'fs';
 import EventEmitter from 'events';
 import child_process from 'child_process';
 import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants.js';
@@ -17,6 +18,7 @@ import { RS_CONSTANTS, IPC_DEFAULT_TIMEOUT_MS } from './constants.js';
 
 // Manages an active rollstarts process
 export class RollStartsManager extends EventEmitter {
+    #watcher; // The watcher instance (if any)
     #options; // The options passed to the constructor
     #active_process = null; // The active process (if any)
     #temporary_process = null; // The temporary process which will replace the active process (if any)
@@ -34,7 +36,27 @@ export class RollStartsManager extends EventEmitter {
         this.#recover_attempts = options.recover_attempts || 100;
 
         // Trigger a restart to start the application
-        this.restart().catch((error) => this.emit('error', error));
+        this.restart()
+            .then(() => this.watch()) // Begin watching the root Javascript file for changes to automatically restart the application
+            .catch((error) => this.emit('error', error));
+    }
+
+    /**
+     * Begins watching the root Javascript file for changes to automatically restart the application.
+     */
+    async watch() {
+        // If watching is disabled, then return
+        const should_watch = this.#options.watch !== undefined ? this.#options.watch : true;
+        if (!should_watch) return;
+
+        // If there is already a watcher, then return it
+        if (this.#watcher) return this.#watcher;
+
+        // Create a watcher instance
+        this.#watcher = fs.watch(this.#options.path, () => this.restart());
+
+        // Return the watcher instance
+        return this.#watcher;
     }
 
     #restart_promise;
